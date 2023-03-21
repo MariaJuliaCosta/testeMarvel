@@ -12,10 +12,20 @@ class CharactersScreen extends StatefulWidget {
 }
 
 class _CharactersScreenState extends State<CharactersScreen> {
-  CharactersPagination _charactersPagination =
-      CharactersPagination(allCharacters: []);
+  CharactersPagination _charactersPagination = CharactersPagination(
+    allCharacters: [],
+    dataMarvel:
+        DataMarvel(offset: 0, limit: 4, total: 1562, count: 4, results: []),
+  );
   final _searchController = TextEditingController();
   ScrollController _scrollController = ScrollController();
+  double _listViewWidth = 0;
+  int offSet = 0;
+  DataMarvel data =
+      DataMarvel(offset: 0, limit: 0, total: 0, count: 0, results: []);
+  int qtd = 0;
+  var isLoading = false;
+  List<CharactersMarvel> filteredCharacters = [];
 
   @override
   void initState() {
@@ -27,9 +37,18 @@ class _CharactersScreenState extends State<CharactersScreen> {
   }
 
   Future<void> _loadCharacters() async {
-    final characters = await fetchMarvelCharacters();
     setState(() {
-      _charactersPagination = CharactersPagination(allCharacters: characters);
+      isLoading = true;
+    });
+    var load = await fetchMarvelCharacters(0);
+    setState(() {
+      data = load;
+      qtd = data.total;
+      _charactersPagination = CharactersPagination(
+        allCharacters: data.results,
+        dataMarvel: data,
+      );
+      isLoading = false;
     });
   }
 
@@ -43,71 +62,100 @@ class _CharactersScreenState extends State<CharactersScreen> {
         final queryLower = query.toLowerCase();
         return nameLower.contains(queryLower);
       }).toList();
+      final filteredData = DataMarvel(
+        offset: _charactersPagination.dataMarvel.offset,
+        limit: _charactersPagination.dataMarvel.limit,
+        total: filteredCharacters.length,
+        count: filteredCharacters.length,
+        results: filteredCharacters,
+      );
       setState(() {
-        _charactersPagination =
-            CharactersPagination(allCharacters: filteredCharacters);
+        _charactersPagination = CharactersPagination(
+          allCharacters: filteredCharacters,
+          dataMarvel: filteredData,
+        );
       });
     }
   }
 
+  buildList() async {
+    setState(() {
+      isLoading = true;
+    });
+    var marvel = await fetchMarvelCharacters(offSet);
+    setState(() {
+      data = marvel;
+      qtd = _charactersPagination.totalPageCount;
+      _charactersPagination =
+          CharactersPagination(allCharacters: data.results, dataMarvel: data);
+      filteredCharacters = _charactersPagination.allCharacters;
+      isLoading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final characters = _charactersPagination.characters;
     return Scaffold(
-      body: Column(
-        children: [
-          _header(),
-          Container(
-            height: 37,
-            width: double.infinity,
-            color: const Color(0xffD42026),
-            child: const Align(
-              child: Text(
-                "Maria Júlia Bochembuzo",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontFamily: 'Roboto',
-                  fontWeight: FontWeight.w400,
-                  fontSize: 16,
-                ),
+        body: Column(
+      children: [
+        _header(),
+        Container(
+          height: 37,
+          width: double.infinity,
+          color: const Color(0xffD42026),
+          child: const Align(
+            child: Text(
+              "Maria Júlia Bochembuzo",
+              style: TextStyle(
+                color: Colors.white,
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w400,
+                fontSize: 16,
               ),
             ),
           ),
-          Expanded(
-            child: ListView.separated(
-              separatorBuilder: (BuildContext context, int index) =>
-                  const Divider(
-                height: 2,
-                color: Color(0xffD42026),
-                thickness: 1,
-              ),
-              itemCount: characters.length,
-              itemBuilder: (context, index) {
-                final character = characters[index];
-                return _cardCharacter(
-                  character: character,
-                  onCardTap: (character) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => CharacterDetails(
-                                characterMarvel: character,
-                              )),
+        ),
+        Expanded(
+          child: !isLoading
+              ? ListView.separated(
+                  separatorBuilder: (BuildContext context, int index) =>
+                      const Divider(
+                    height: 2,
+                    color: Color(0xffD42026),
+                    thickness: 1,
+                  ),
+                  itemCount: _charactersPagination.dataMarvel.results.length,
+                  itemBuilder: (context, index) {
+                    final character =
+                        _charactersPagination.dataMarvel.results[index];
+                    return _cardCharacter(
+                      character: character,
+                      onCardTap: (character) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CharacterDetails(
+                              characterMarvel: character,
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-          ),
-          _buttonsPagination(),
-          Container(
-            height: 12,
-            width: double.infinity,
-            color: const Color(0xffD42026),
-          ),
-        ],
-      ),
-    );
+                )
+              : const Center(
+                  child: CircularProgressIndicator(
+                  color: Color(0xffD42026),
+                )),
+        ),
+        _buttonsPagination(),
+        Container(
+          height: 12,
+          width: double.infinity,
+          color: const Color(0xffD42026),
+        ),
+      ],
+    ));
   }
 
   Widget _header() {
@@ -173,6 +221,9 @@ class _CharactersScreenState extends State<CharactersScreen> {
   }
 
   Widget _buttonsPagination() {
+    bool isFirstPage = offSet == 0;
+    bool isLastPage = offSet == qtd - 1;
+
     return Container(
       height: 74,
       width: double.infinity,
@@ -194,69 +245,79 @@ class _CharactersScreenState extends State<CharactersScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _charactersPagination.previousPage();
-                });
-              },
-              child: const Icon(
+              onTap: isFirstPage
+                  ? null
+                  : () {
+                      setState(() {
+                        offSet -= 1;
+                        buildList();
+                      });
+                    },
+              child: Icon(
                 Icons.arrow_left,
-                color: Color(0xffD42026),
+                color: isFirstPage ? Colors.grey : const Color(0xffD42026),
                 size: 60,
               ),
             ),
             Expanded(
-                child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              shrinkWrap: true,
-              itemCount: _charactersPagination.totalPageCount,
-              controller: _scrollController,
-              itemBuilder: (context, index) {
-                bool isSelected = _charactersPagination.currentPage == index;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _charactersPagination.goToPage(index);
-                    });
-                    _scrollToSelected(index);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 6, left: 6),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isSelected ? Colors.red : Colors.white,
-                        border: Border.all(
-                            color: const Color(0xffD42026), width: 1),
-                      ),
-                      child: Center(
-                        child: Text(
-                          (index + 1).toString(),
-                          style: TextStyle(
-                            color: isSelected
-                                ? Colors.white
-                                : const Color(0xffD42026),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w400,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                shrinkWrap: true,
+                itemCount: qtd,
+                controller: _scrollController,
+                itemBuilder: (context, index) {
+                  bool isSelected = _charactersPagination.currentPage == index;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        offSet = index;
+                        buildList();
+                      });
+                      _scrollToSelected(index);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 6, left: 6),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isSelected ? Colors.red : Colors.white,
+                          border: Border.all(
+                            color: const Color(0xffD42026),
+                            width: 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            (index + 1).toString(),
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : const Color(0xffD42026),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w400,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
-            )),
+                  );
+                },
+              ),
+            ),
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _charactersPagination.nextPage();
-                });
-              },
-              child: const Icon(
+              onTap: isLastPage
+                  ? null
+                  : () {
+                      setState(() {
+                        offSet += 1;
+                        buildList();
+                      });
+                    },
+              child: Icon(
                 Icons.arrow_right_sharp,
-                color: Color(0xffD42026),
+                color: isLastPage ? Colors.grey : const Color(0xffD42026),
                 size: 60,
               ),
             ),
@@ -266,22 +327,17 @@ class _CharactersScreenState extends State<CharactersScreen> {
     );
   }
 
-  // ScrollController _scrollController = ScrollController();
-
   void _scrollToSelected(int index) {
-    final itemWidth = 32.0;
-    final margin = 6.0;
-    final listViewWidth = MediaQuery.of(context).size.width -
-        60; // 60 is the total padding from left and right
+    const itemWidth = 32.0;
+    const margin = 6.0;
+    final listViewWidth = MediaQuery.of(context).size.width - 60;
 
     final selectedItemPosition =
         (itemWidth + margin) * index + itemWidth / 2 - listViewWidth / 2;
 
     _scrollController.animateTo(selectedItemPosition,
-        duration: Duration(milliseconds: 500), curve: Curves.easeInOut);
+        duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
   }
-
-  double _listViewWidth = 0;
 
   Widget _cardCharacter(
       {required CharactersMarvel character, required Function onCardTap}) {
